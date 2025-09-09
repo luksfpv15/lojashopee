@@ -1,0 +1,971 @@
+{
+  "name": "Automação Completa de Pedidos e Estoque (Versão 3.0)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "novo-pedido-wa",
+        "options": {}
+      },
+      "name": "1. Receber Pedido WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        240
+      ],
+      "id": "a3afc3f6-4686-49cc-870e-8bf3a8dba926",
+      "webhookId": "1c78681a-6963-4725-bf10-70874e6044cb"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM produtos;"
+      },
+      "name": "2. Obter Produtos do MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        240
+      ],
+      "id": "2d244f2d-4d7a-4b9e-9b6d-a3d8c1e7a5b9",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const pedidoText = $json.body.text.toLowerCase();\nconst products = $node['2. Obter Produtos do MySQL'].json;\n\nif (pedidoText.includes('rastreio') || pedidoText.includes('entrega')) {\n \treturn [{ json: { action: 'resposta_rastreio', original_body: $json.body } }];\n} else if (pedidoText.includes('loja fisica') || pedidoText.includes('localização')) {\n \treturn [{ json: { action: 'resposta_loja_fisica', original_body: $json.body } }];\n} else if (pedidoText.includes('devolver') || pedidoText.includes('troca') || pedidoText.includes('reembolso')) {\n \treturn [{ json: { action: 'resposta_devolucao', original_body: $json.body } }];\n} else {\n \tlet identifiedProduct = null;\n \tfor (const item of products) {\n \t \tif (pedidoText.includes(item.nome_produto.toLowerCase())) {\n \t \t\tidentifiedProduct = item;\n \t \t\tbreak;\n \t \t}\n \t}\n\n \tif (identifiedProduct) {\n \t \tconst quantityMatch = pedidoText.match(/\\d+/);\n \t \tconst quantity = quantityMatch ? parseInt(quantityMatch[0], 10) : 1;\n \t \treturn [\n \t \t \t{\n \t \t \t\tjson: {\n \t \t \t\t\taction: 'pedido',\n \t \t \t\t\tsku: identifiedProduct.sku,\n \t \t \t\t\tshopee_item_id: identifiedProduct.shopee_item_id,\n \t \t \t\t\tquantity: quantity,\n \t \t \t\t\toriginal_body: $json.body\n \t \t \t\t}\n \t \t \t}\n \t \t];\n \t} else {\n \t \treturn [\n \t \t \t{\n \t \t \t\tjson: {\n \t \t \t\t\taction: 'nenhum_produto_encontrado',\n \t \t \t\t\toriginal_body: $json.body\n \t \t \t\t}\n \t \t \t}\n \t \t];\n \t}\n}"
+      },
+      "name": "3. Analisar Mensagem (Code)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        240
+      ],
+      "id": "0fedf44f-9ab2-4ab7-94ab-ec839efd959f"
+    },
+    {
+      "parameters": {
+        "value1": "={{$json.action}}",
+        "value2": "pedido",
+        "options": {}
+      },
+      "name": "4. Roteador de Ações (Switch)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        240
+      ],
+      "id": "a7c2e3f4-b5d6-c7e8-f9g0-h1i2j3k4l5m6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pedidos (id_pedido_origem, canal_venda, nome_cliente, telefone_cliente, status)\nVALUES ('{{$node[\"1. Receber Pedido WhatsApp\"].json.body.id}}', 'WhatsApp', '{{$node[\"1. Receber Pedido WhatsApp\"].json.body.text}}', '{{$node[\"1. Receber Pedido WhatsApp\"].json.body.phone}}', 'pendente');"
+      },
+      "name": "6. Adicionar Pedido ao MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        140
+      ],
+      "id": "cef5150f-af93-4a5a-86a2-ca8ba6c64bc4",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "✅ Novo pedido recebido! Cliente: {{$node[\"1. Receber Pedido WhatsApp\"].json.body.text}} - Canal: WhatsApp\n📦 Estoque da Shopee atualizado para o produto {{$json.sku}}.",
+        "additionalFields": {}
+      },
+      "name": "7. Notificar Equipe (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        240
+      ],
+      "id": "64eeb26b-42af-45f3-94e3-03fb16bc61f5",
+      "webhookId": "1e314b83-2e99-45b4-a8f2-28766f81323c",
+      "credentials": {
+        "telegramApi": {
+          "id": "4X5cb9Wr6IVssTS1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n \t\"status\": \"success\",\n \t\"message\": \"Seu pedido foi recebido e o estoque atualizado com sucesso!\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "8. Responder ao Pedido (Webhook)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        208,
+        240
+      ],
+      "id": "899cc7a0-6b63-478a-b4c0-f709edef7beb"
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "options": {}
+      },
+      "name": "9. Enviar Confirmação WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        64
+      ],
+      "id": "cfaafc86-9622-4b7e-a8f4-8abecf3d0e56"
+    },
+    {
+      "parameters": {
+        "mode": "everyMinute",
+        "options": {}
+      },
+      "name": "10. Agendador (Cron)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        720
+      ],
+      "id": "7cc56dbe-b810-4782-9849-bae3b5c1b47a"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sku, stock, shopee_item_id FROM products;"
+      },
+      "name": "11. Obter Estoque Interno (MySQL)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        720
+      ],
+      "id": "7ab0c9f6-0ad6-4338-b1c2-a30e79234c8d",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "12. Processar Produtos (Split In Batches)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        720
+      ],
+      "id": "1a5388aa-0926-492f-99fc-c6bd3f839d5c"
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "url": "https://partner.shopeemobile.com/api/v2/product/get_item_base_info",
+        "options": {}
+      },
+      "name": "13. Obter Estoque Shopee",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        720
+      ],
+      "id": "65be328c-20fb-4811-a9bb-444362a92051"
+    },
+    {
+      "parameters": {
+        "functionCode": "const internalStock = $input.item.json.stock;\nconst shopeeStock = $input.item.json.shopee_stock;\n\nif (internalStock !== shopeeStock) {\n \treturn [\n \t \t{\n \t \t \t\"json\": {\n \t \t \t \t\"sku\": $input.item.json.sku,\n \t \t \t \t\"internal_stock\": internalStock,\n \t \t \t \t\"shopee_stock\": shopeeStock,\n \t \t \t \t\"message\": `Discrepância de estoque: O SKU ${$input.item.json.sku} tem ${internalStock} no MySQL, mas ${shopeeStock} na Shopee.`}\n \t \t}\n \t];\n}\nreturn [];"
+      },
+      "name": "14. Comparar Estoques (Code)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        720
+      ],
+      "id": "b7f8a0fc-d251-4984-9351-a4e267a00317"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "{{$json.message}}",
+        "additionalFields": {}
+      },
+      "name": "15. Notificar Discrepância (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        208,
+        720
+      ],
+      "id": "fbeeb8e1-fc9a-4ef5-b1c3-8c7838835bd0",
+      "webhookId": "7217b65f-a4a2-48ac-a978-b474a8fbdd10"
+    },
+    {
+      "parameters": {
+        "mode": "everyMinute",
+        "options": {}
+      },
+      "name": "16. Agendador (Cron)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        1200
+      ],
+      "id": "b2e3c0d1-a4f5-4b1c-8b3d-5c6a7e8f9b0c"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id_pedido_origem, telefone_cliente, status_envio, codigo_rastreio\nFROM pedidos\nWHERE status = 'enviado' AND status_envio = 'nao_notificado';"
+      },
+      "name": "17. Obter Pedidos Enviados (MySQL)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        1200
+      ],
+      "id": "d0f1e2c3-a4b5-4d6e-8f9a-b0c1d2e3f4g5",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.telefone_cliente}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Olá! Seu pedido foi enviado! Código de rastreio: {{$json.codigo_rastreio}}. Você pode acompanhar o envio neste link: YOUR_TRACKING_URL\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "18. Notificar Envio (WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        1200
+      ],
+      "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+      "credentials": {
+        "whatsappApi": {
+          "id": "YOUR_WHATSAPP_API_CREDENTIAL_ID",
+          "name": "WhatsApp API Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE pedidos SET status_envio = 'notificado' WHERE id_pedido_origem = '{{$json.id_pedido_origem}}';"
+      },
+      "name": "19. Marcar Como Notificado (MySQL)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        1200
+      ],
+      "id": "e4f3g2h1-i0j9-k8l7-m6n5-o4p3q2r1s0t9",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.original_body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Olá! O prazo de entrega é de 5 a 10 dias úteis. Para rastrear seu pedido, use o código fornecido no momento do envio.\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "20. Resposta: Prazo de Entrega",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -100
+      ],
+      "id": "b3e4f5g6-c7d8-e9f0-g1h2-i3j4k5l6m7n8"
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.original_body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Não temos loja física no momento. Nossas vendas são exclusivamente online!\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "21. Resposta: Loja Física",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -20
+      ],
+      "id": "c8d9e0f1-a2b3-c4d5-e6f7-g8h9i0j1k2l3"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n \t\"status\": \"success\",\n \t\"message\": \"Resposta automática enviada.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "22. Responder ao Webhook (FAQ)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -100
+      ],
+      "id": "e4f5g6h7-i8j9-k0l1-m2n3-o4p5q6r7s8t9"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM pedidos WHERE telefone_cliente = '{{$json.original_body.phone}}' ORDER BY data DESC LIMIT 1;"
+      },
+      "name": "23. Verificar Pedido para Devolução",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        420
+      ],
+      "id": "f5g6h7i8-j9k0-l1m2-n3o4-p5q6r7s8t9u0",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_FREIGHT_API_URL/return-label",
+        "options": {}
+      },
+      "name": "24. Gerar Etiqueta de Devolução",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        420
+      ],
+      "id": "g6h7i8j9-k0l1-m2n3-o4p5-q6r7s8t9u0v1",
+      "credentials": {
+        "freightApi": {
+          "id": "YOUR_FREIGHT_API_CREDENTIAL_ID",
+          "name": "Freight API Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.original_body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Olá! Iniciamos o processo de devolução para o seu pedido mais recente. Você pode acessar sua etiqueta de devolução aqui: {{$node['24. Gerar Etiqueta de Devolução'].json.returnLabelUrl}}.\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "25. Notificar Devolução (WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        208,
+        420
+      ],
+      "id": "h7i8j9k0-l1m2-n3o4-p5q6-r7s8t9u0v1w2",
+      "credentials": {
+        "whatsappApi": {
+          "id": "YOUR_WHATSAPP_API_CREDENTIAL_ID",
+          "name": "WhatsApp API Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.original_body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Olá! Não conseguimos encontrar um pedido recente para iniciar o processo de devolução.\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "26. Resposta: Devolução Não Encontrada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        208,
+        520
+      ],
+      "id": "i8j9k0l1-m2n3-o4p5-q6r7-s8t9u0v1w2x3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id_pedido_origem, nome_cliente, telefone_cliente FROM pedidos WHERE status = 'pendente' AND data < DATE_SUB(NOW(), INTERVAL 7 DAY);"
+      },
+      "name": "27. Obter Pedidos Pendentes Antigos",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        1440
+      ],
+      "id": "j9k0l1m2-n3o4-p5q6-r7s8-t9u0v1w2x3y4",
+      "credentials": {
+        "mySql": {
+          "id": "AMvvIDbyMu5rSam2",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "options": {}
+      },
+      "name": "29. Buscar Vendas Shopee",
+      "type": "n8n-nodes-base.shopee",
+      "typeVersion": 1,
+      "position": [
+        286,
+        1440
+      ],
+      "id": "e6f49493-479c-4934-8c73-4560a8b9e69c",
+      "credentials": {
+        "shopeeApi": {
+          "id": "3645000",
+          "name": "Shopee"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "interactive"
+            },
+            {
+              "name": "interactive",
+              "value": "{\"type\": \"button\", \"header\": {\"type\": \"text\", \"text\": \"Olá! Em que posso ajudar?\"}, \"body\": {\"text\": \"Selecione uma opção abaixo:\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"rastreio\", \"title\": \"Rastrear Pedido\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"falar_com_atendente\", \"title\": \"Falar com Atendente\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"devolucao\", \"title\": \"Devolução\"}}]}}"
+            }
+          ]
+        }
+      },
+      "name": "1.1. Enviar Menu Interativo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        140
+      ],
+      "id": "new-interactive-menu-node"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "2. Separar Itens do Pedido",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        340
+      ],
+      "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c7e"
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "YOUR_WHATSAPP_API_URL",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "recipient_type",
+              "value": "individual"
+            },
+            {
+              "name": "to",
+              "value": "{{$json.original_body.phone}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\n \t\"body\": \"Olá! Sua solicitação foi recebida. Em breve, um de nossos atendentes entrará em contato!\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "5. Enviar Resposta Padrão WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        640
+      ],
+      "id": "b2c3d4e5-f6g7-h8i9-j0k1-l2m3n4o5p6q7"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "⚠️ Pedido pendente antigo! ID: {{$json.id_pedido_origem}} - Cliente: {{$json.nome_cliente}} - Telefone: {{$json.telefone_cliente}}. Por favor, verifique o status!",
+        "additionalFields": {}
+      },
+      "name": "28. Notificar Pedidos Pendentes (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        1440
+      ],
+      "id": "c3d4e5f6-g7h8-i9j0-k1l2-m3n4o5p6q7r8"
+    }
+  ],
+  "connections": {
+    "1. Receber Pedido WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "2. Obter Produtos do MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Obter Produtos do MySQL": {
+      "main": [
+        [
+          {
+            "node": "3. Analisar Mensagem (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Analisar Mensagem (Code)": {
+      "main": [
+        [
+          {
+            "node": "4. Roteador de Ações (Switch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Roteador de Ações (Switch)": {
+      "main": [
+        [
+          {
+            "node": "6. Adicionar Pedido ao MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "20. Resposta: Prazo de Entrega",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "21. Resposta: Loja Física",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "23. Verificar Pedido para Devolução",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "5. Enviar Resposta Padrão WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Adicionar Pedido ao MySQL": {
+      "main": [
+        [
+          {
+            "node": "7. Notificar Equipe (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Notificar Equipe (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "8. Responder ao Pedido (Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. Enviar Confirmação WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "8. Responder ao Pedido (Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10. Agendador (Cron)": {
+      "main": [
+        [
+          {
+            "node": "11. Obter Estoque Interno (MySQL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11. Obter Estoque Interno (MySQL)": {
+      "main": [
+        [
+          {
+            "node": "12. Processar Produtos (Split In Batches)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12. Processar Produtos (Split In Batches)": {
+      "main": [
+        [
+          {
+            "node": "13. Obter Estoque Shopee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "13. Obter Estoque Shopee": {
+      "main": [
+        [
+          {
+            "node": "14. Comparar Estoques (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "14. Comparar Estoques (Code)": {
+      "main": [
+        [
+          {
+            "node": "15. Notificar Discrepância (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "16. Agendador (Cron)": {
+      "main": [
+        [
+          {
+            "node": "17. Obter Pedidos Enviados (MySQL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "17. Obter Pedidos Enviados (MySQL)": {
+      "main": [
+        [
+          {
+            "node": "18. Notificar Envio (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "18. Notificar Envio (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "19. Marcar Como Notificado (MySQL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "20. Resposta: Prazo de Entrega": {
+      "main": [
+        [
+          {
+            "node": "22. Responder ao Webhook (FAQ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "21. Resposta: Loja Física": {
+      "main": [
+        [
+          {
+            "node": "22. Responder ao Webhook (FAQ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "23. Verificar Pedido para Devolução": {
+      "main": [
+        [
+          {
+            "node": "24. Gerar Etiqueta de Devolução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "24. Gerar Etiqueta de Devolução": {
+      "main": [
+        [
+          {
+            "node": "25. Notificar Devolução (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "27. Obter Pedidos Pendentes Antigos": {
+      "main": [
+        [
+          {
+            "node": "28. Notificar Pedidos Pendentes (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "28. Agendador (Cron) - Shopee": {
+      "main": [
+        [
+          {
+            "node": "29. Buscar Vendas Shopee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
